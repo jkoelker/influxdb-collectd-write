@@ -145,6 +145,9 @@ class InfluxDB(object):
         self._flush_thread = None
 
     def _flush(self, timeout=-1, identifier=None, flush=False):
+        if not self._buffer:
+            flush = True
+
         if identifier:
             if identifier in self._queues:
                 queues = [(identifier, self._queues[identifier])]
@@ -159,6 +162,7 @@ class InfluxDB(object):
             if sum([q[1].qsize() for q in queues]) < self._buffer_size:
                 return
 
+        collectd.info('flush')
         data = {}
         values = []
         add = values.extend
@@ -202,15 +206,15 @@ class InfluxDB(object):
                 self._retry = True
 
             elif key == 'buffer':
-                self._buffer = True
+                self._buffer = values[0]
                 num_values = len(values)
 
-                if num_values == 1:
-                    self._buffer_size = int(values[0])
+                if num_values == 2:
+                    self._buffer_size = int(values[1])
 
-                elif num_values == 2:
-                    self._buffer_size = int(values[0])
-                    self._buffer_sec = float(values[1])
+                elif num_values == 3:
+                    self._buffer_size = int(values[1])
+                    self._buffer_sec = float(values[2])
 
             elif key == 'typesdb':
                 self._typesdb.append(values[0])
