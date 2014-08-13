@@ -272,23 +272,6 @@ class InfluxDB(object):
 
         self._queues[identifier].put(data)
         self._flush()
-#        for (value_type, value) in zip(value_types, sample.values):
-#            columns = ['time', value_type[0], 'host', 'type']
-#            points = [sample.time, value, sample.host, sample.type]
-#
-#            if sample.plugin_instance:
-#                columns.append('plugin_instance')
-#                points.append(sample.plugin_instance)
-#
-#            if sample.type_instance:
-#                columns.append('type_instance')
-#                points.append(sample.type_instance)
-#
-#            data = {'name': sample.plugin,
-#                    'columns': columns,
-#                    'points': [points]}
-#
-#            self._queues[identifier].put(data)
 
 
 db = InfluxDB()
