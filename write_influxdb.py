@@ -179,7 +179,7 @@ class InfluxDB(object):
         except (requests.exceptions.Timeout,
                 requests.exceptions.ConnectionError):
             if self._retry:
-                for idtentifier, values in data:
+                for identifier, values in data:
                     for v in values:
                         self._queues[identifier].put(v)
 
