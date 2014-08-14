@@ -162,7 +162,6 @@ class InfluxDB(object):
             if sum([q[1].qsize() for q in queues]) < self._buffer_size:
                 return
 
-        collectd.info('flush')
         data = {}
         values = []
         add = values.extend
