@@ -40,7 +40,7 @@ def parse_types_file(path):
             if len(ds_fields) != 4:
                 continue
 
-            v.append(ds_fields[0])
+            v.append(ds_fields)
 
         data[type_name] = v
 
@@ -59,6 +59,20 @@ def parse_types(*paths):
             pass
 
     return data
+
+
+def str_to_num(s):
+    """
+    Convert type limits from strings to floats for arithmetic.
+    Will force U[nlimited] values to be 0.
+    """
+
+    try:
+        n = float(s)
+    except ValueError:
+        n = 0
+
+    return n
 
 
 def format_identifier(value):
@@ -142,7 +156,9 @@ class InfluxDB(object):
         self._typesdb = ['/usr/share/collectd/types.db']
         self._types = None
         self._queues = None
+        self._last_sample = {}
         self._flush_thread = None
+        self._raw_values = False
 
     def _flush(self, timeout=-1, identifier=None, flush=False):
         if not self._buffer:
@@ -166,9 +182,9 @@ class InfluxDB(object):
         values = []
         add = values.extend
 
-        for identifier, queue in queues:
-            queue_values = queue.get_bulk(timeout=timeout,
-                                          flush=flush)
+        for identifier, value_queue in queues:
+            queue_values = value_queue.get_bulk(timeout=timeout,
+                                                flush=flush)
 
             if not queue_values:
                 continue
@@ -204,6 +220,9 @@ class InfluxDB(object):
             elif key == 'retry':
                 self._retry = True
 
+            elif key == 'raw_values':
+                self._raw_values = True
+
             elif key == 'buffer':
                 self._buffer = values[0]
                 num_values = len(values)
@@ -238,9 +257,9 @@ class InfluxDB(object):
         self._flush(flush=True)
 
     def write(self, sample):
-        value_types = self._types.get(sample.type)
+        type_info = self._types.get(sample.type)
 
-        if value_types is None:
+        if type_info is None:
             msg = 'plugin: %s unknown type %s, not listed in %s'
 
             collectd.info('write_influxdb: ' + msg % (sample.plugin,
@@ -250,11 +269,56 @@ class InfluxDB(object):
 
         identifier = format_identifier(sample)
         columns = ['time']
-        columns.extend(value_types)
-        columns.extend(('host', 'type'))
-
         points = [sample.time]
+
+        for i, (ds_name, ds_type, min_val, max_val) in enumerate(type_info):
+            value = sample.values[i]
+            columns.append(ds_name)
+
+            if (not isinstance(value, (float, int)) or
+                    ds_type == "GAUGE" or
+                    self._raw_values):
+                continue
+
+            metric_identifier = identifier + ds_name
+            last = self._last_sample.get(metric_identifier)
+            curr_time = time.monotonic()
+            self._last_sample[metric_identifier] = (curr_time, value)
+            if not last:
+                continue
+
+            old_time, old_value = last
+            # Determine time between datapoints
+            interval = curr_time - old_time
+            if interval < 1:
+                interval = 1
+
+            if ds_type == "COUNTER" or ds_type == "DERIVE":
+                # Check for overflow if it's a counter
+                if ds_type == "COUNTER" and value < old_value:
+                    if max_val == 'U':
+                        # this is funky. pretend as if this is the first data
+                        # point
+                        new_value = None
+                    else:
+                        min_val = str_to_num(min_val)
+                        max_val = str_to_num(max_val)
+                        new_value = max_val - old_value + value - min_val
+                else:
+                    new_value = value - old_value
+
+                # Both COUNTER and DERIVE get divided by the timespan
+                new_value /= interval
+            elif ds_type == "ABSOLUTE":
+                new_value = value / interval
+            else:
+                collectd.warn('unrecognized ds_type {}'.format(ds_type))
+                new_value = value
+
+            sample.values[i] = new_value
+
         points.extend(sample.values)
+        columns.extend(('host', 'type'))
         points.extend((sample.host, sample.type))
 
         if sample.plugin_instance:
