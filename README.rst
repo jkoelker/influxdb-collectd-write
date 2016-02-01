@@ -17,7 +17,7 @@ Install then add it to collectd.conf (default values shown and may be omitted):
      Import "write_influxdb"
 
      <Module "write_influxdb">
-         host "localhost'
+         host "localhost"
          port 8086
          username "root"
          password "root"
